@@ -1,241 +1,141 @@
 export default {
-
   async fetch(request, env, ctx) {
-
     const url = new URL(request.url);
-
     const { pathname } = url;
 
-
-
-    // ---- 1. SETUP FALLBACK LINK (WAJIB DIGANTI)
-
-    // Link ini akan dipakai jika GitHub Down, Error, atau links.txt kosong.
-
+    // =================================================================
+    // 1. SETUP: LINK CADANGAN (WAJIB DIGANTI)
+    // =================================================================
+    // Link ini dipakai jika GitHub error atau list kosong.
     const FALLBACK_LINK = "https://s.shopee.co.id/9pXfMxzjld"; 
 
+    // =================================================================
+    // 2. FITUR HEMAT KUOTA: BLOCK BOTS & CRAWLERS
+    // =================================================================
+    // Jika link di-share di WA/FB, bot mereka akan nge-ping. 
+    // Kita kasih tampilan HTML saja, jangan jalankan script berat.
+    const ua = request.headers.get("User-Agent") || "";
+    // Regex mendeteksi bot umum (WA, FB, Twitter, Telegram, Discord, Google)
+    if (/facebookexternalhit|WhatsApp|TelegramBot|Twitterbot|Discordbot|Googlebot|bingbot/i.test(ua)) {
+      return new Response(`
+        <!doctype html>
+        <html lang="id">
+        <head>
+          <meta charset="utf-8">
+          <title>Promo Shopee Spesial</title>
+          <meta property="og:title" content="Rekomendasi Produk Shopee">
+          <meta property="og:description" content="Klik link ini untuk melihat diskon spesial hari ini!">
+          <meta property="og:image" content="https://cf.shopee.co.id/file/id-50009109-c9a9301e80826955a805c87532f30089"> 
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+        </head>
+        <body>
+          <h1>Redirecting...</h1>
+        </body>
+        </html>`, 
+        { headers: { "content-type": "text/html" } }
+      );
+    }
 
-
-    // ---- Health check
-
+    // Health check sederhana
     if (pathname === "/health") return new Response("ok");
 
-
-
-    // ---- Helper: load links.txt dari GitHub + edge cache 60s
-
+    // =================================================================
+    // 3. FUNGSI LOAD LINK (CACHE 1 JAM / 3600 DETIK)
+    // =================================================================
     async function loadLinks() {
-
+      // GANTI URL INI dengan link raw GitHub kamu sendiri
       const RAW_URL = "https://raw.githubusercontent.com/Hecate1337-py/shopeeaff/main/links.txt";
-
+      
       const cache = caches.default;
+      const cacheKey = new Request(RAW_URL);
 
-      const cacheKey = new Request(RAW_URL, { cf: { cacheTtl: 60 } });
-
-
-
+      // Cek apakah ada data di Cache Cloudflare?
       let res = await cache.match(cacheKey);
 
       if (!res) {
+        // Jika tidak ada di cache, ambil dari GitHub
+        // cacheTtl: 3600 = 1 Jam. (Lebih hemat daripada 60 detik)
+        // cacheEverything: true = Paksa simpan cache walau GitHub kirim header no-cache
+        res = await fetch(RAW_URL, { 
+          cf: { cacheTtl: 3600, cacheEverything: true } 
+        });
 
-        res = await fetch(cacheKey, { cf: { cacheTtl: 60 } });
+        if (!res.ok) throw new Error("Gagal mengambil links.txt dari GitHub");
 
-        if (!res.ok) throw new Error("Failed to load links.txt");
-
-        ctx.waitUntil(cache.put(cacheKey, res.clone()));
-
+        // Kita buat ulang response agar header cache-nya valid untuk disimpan
+        const resToCache = new Response(res.clone().body, res);
+        resToCache.headers.set("Cache-Control", "public, max-age=3600");
+        
+        // Simpan ke Cache Cloudflare (Background process)
+        ctx.waitUntil(cache.put(cacheKey, resToCache));
       }
 
       const text = await res.text();
-
+      // Bersihkan text dari baris kosong atau karakter aneh
       const lines = text
-
         .split("\n")
-
         .map(l => l.trim().replace(/[\u0000-\u001F\u007F]/g, ""))
+        .filter(Boolean); // Hapus baris kosong
 
-        .filter(Boolean);
-
-      if (!lines.length) throw new Error("No links available");
-
+      if (!lines.length) throw new Error("File links.txt kosong");
       return lines;
-
     }
 
-
-
-    // ---- /proof : Halaman Bukti
-
+    // =================================================================
+    // 4. HALAMAN DEBUG (/preview & /proof)
+    // =================================================================
     if (pathname === "/proof") {
-
-      let aff = (env && env.SHOPEE_AFF_LINK) || "";
-
-      if (!aff) {
-
-        try {
-
-          const lines = await loadLinks();
-
-          aff = lines[0];
-
-        } catch {
-
-          aff = FALLBACK_LINK; // Gunakan fallback jika gagal load
-
-        }
-
-      }
-
-      
-
-      // Validasi URL biar gak error saat render HTML
-
-      let safe = FALLBACK_LINK;
-
-      try {
-
-        const u = new URL(aff);
-
-        if (/^https?:$/.test(u.protocol)) safe = u.toString();
-
-      } catch {}
-
-
-
-      const html = `<!doctype html>
-
-<html lang="id">
-
-<head>
-
-<meta charset="utf-8">
-
-<meta name="viewport" content="width=device-width,initial-scale=1">
-
-<meta name="robots" content="noindex">
-
-<title>Shopee Affiliate</title>
-
-<style>
-
-:root{--brand:#ee4d2d}
-
-body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:40px;text-align:center;color:#111}
-
-.wrap{max-width:760px;margin:0 auto}
-
-.btn{display:inline-block;padding:12px 22px;background:var(--brand);color:#fff;border-radius:10px;text-decoration:none;font-weight:600}
-
-.box{margin-top:24px;padding:12px;background:#fafafa;border:1px solid #eee;border-radius:10px;word-break:break-all}
-
-</style>
-
-</head>
-
-<body>
-
-  <div class="wrap">
-
-    <h1>Promo Shopee</h1>
-
-    <p><a class="btn" href="${safe}" target="_blank">Buka Aplikasi</a></p>
-
-    <div class="box"><strong>Link:</strong><br>${safe}</div>
-
-  </div>
-
-</body>
-
-</html>`;
-
-      return new Response(html, { headers: { "content-type": "text/html" } });
-
+      return new Response(null, { status: 302, headers: { Location: FALLBACK_LINK } });
     }
-
-
-
-    // ---- /preview : Cek link
 
     if (pathname === "/preview") {
-
       try {
-
         const links = await loadLinks();
-
-        const html = `<!doctype html><h2>Daftar Link (${links.length})</h2><ol>${links.map(l => `<li><a href="${l}">${l}</a></li>`).join("")}</ol>`;
-
+        const html = `<h2>Total Link: ${links.length}</h2><ol>${links.map(l => `<li>${l}</li>`).join("")}</ol>`;
         return new Response(html, { headers: { "content-type": "text/html" } });
-
       } catch (e) {
-
-        return new Response("Gagal load GitHub: " + e.message, { status: 500 });
-
+        return new Response("Error: " + e.message, { status: 500 });
       }
-
     }
 
-
-
-    // ---- ROTATOR LOGIC
-
+    // =================================================================
+    // 5. LOGIKA ROTATOR UTAMA
+    // =================================================================
     try {
-
       const lines = await loadLinks();
-
+      
+      // MURNI RANDOM: Tidak ada logika persentase/pembagian lain.
+      // 100% link diambil dari list kamu.
       const selected = lines[Math.floor(Math.random() * lines.length)];
 
-
-
+      // Validasi URL biar aman
       let target;
-
       try {
-
         const u = new URL(selected);
-
         if (!/^https?:$/.test(u.protocol)) throw 0;
-
         target = u.toString();
-
       } catch {
-
-        throw new Error("Invalid URL found");
-
+        // Jika link terpilih rusak, gunakan fallback
+        target = FALLBACK_LINK;
       }
 
-
-
       return new Response(null, {
-
         status: 302,
-
-        headers: { "Location": target, "Cache-Control": "no-store" }
-
+        headers: { 
+          "Location": target, 
+          "Cache-Control": "no-store" // Browser user jangan nge-cache redirect ini, biar bisa ganti-ganti
+        }
       });
-
-
 
     } catch (e) {
-
-      // !!!! SAFETY NET / JARING PENGAMAN !!!!
-
-      // Jika error apapun terjadi (GitHub down, format salah), lari ke sini.
-
+      // SAFETY NET: Jika GitHub Down total, lari ke sini.
       return new Response(null, {
-
         status: 302,
-
         headers: { 
-
           "Location": FALLBACK_LINK, 
-
           "Cache-Control": "no-store" 
-
         }
-
       });
-
     }
-
   }
-
 }
