@@ -9,16 +9,155 @@ export default {
     // =================================================================
     // 1. SETUP: LINK CADANGAN (WAJIB DIGANTI)
     // =================================================================
-    // Link ini dipakai jika GitHub error atau list kosong.
     const FALLBACK_LINK = "https://s.shopee.co.id/9pXfMxzjld"; 
 
     // =================================================================
-    // 2. FITUR HEMAT KUOTA: BLOCK BOTS & CRAWLERS
+    // 2. FUNGSI LOAD LINK (DIPINDAHKAN KE ATAS)
     // =================================================================
-    // Jika link di-share di WA/FB, bot mereka akan nge-ping. 
-    // Kita kasih tampilan HTML saja, jangan jalankan script berat.
+    async function loadLinks() {
+      const RAW_URL = "https://raw.githubusercontent.com/Hecate1337-py/shopeeaff/main/links.txt";
+      
+      const cache = caches.default;
+      const cacheKey = new Request(RAW_URL);
+
+      let res = await cache.match(cacheKey);
+
+      if (!res) {
+        res = await fetch(RAW_URL, { 
+          cf: { cacheTtl: 3600, cacheEverything: true } 
+        });
+
+        if (!res.ok) throw new Error("Gagal mengambil links.txt dari GitHub");
+
+        const resToCache = new Response(res.clone().body, res);
+        resToCache.headers.set("Cache-Control", "public, max-age=3600");
+        
+        ctx.waitUntil(cache.put(cacheKey, resToCache));
+      }
+
+      const text = await res.text();
+      const lines = text
+        .split("\n")
+        .map(l => l.trim().replace(/[\u0000-\u001F\u007F]/g, ""))
+        .filter(Boolean);
+
+      if (!lines.length) throw new Error("File links.txt kosong");
+      return lines;
+    }
+
+    // =================================================================
+    // 3. ROUTE DEBUG - HARUS DI ATAS SEBELUM LOGIKA LAIN!
+    // =================================================================
+    
+    // Health check
+    if (pathname === "/health") {
+      return new Response("ok");
+    }
+
+    // Reset counter ke 0
+    if (pathname === "/reset") {
+      globalCounter = 0;
+      return new Response("✅ Counter direset ke 0. <a href='/status'>Lihat Status</a>", { 
+        headers: { "content-type": "text/html; charset=utf-8" } 
+      });
+    }
+
+    // Lihat status counter dan link berikutnya
+    if (pathname === "/status") {
+      try {
+        const links = await loadLinks();
+        const nextIndex = globalCounter % links.length;
+        const html = `
+          <!DOCTYPE html>
+          <html lang="id">
+          <head>
+            <meta charset="utf-8">
+            <title>Status Rotator</title>
+            <style>
+              body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+              .container { background: white; padding: 20px; border-radius: 8px; max-width: 800px; margin: 0 auto; }
+              .stat { background: #e3f2fd; padding: 10px; margin: 5px 0; border-radius: 4px; }
+              .next { background: #fff3cd; font-weight: bold; }
+              a { color: #1976d2; text-decoration: none; }
+              a:hover { text-decoration: underline; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h2>📊 Status Rotator</h2>
+              <div class="stat"><strong>Total Links:</strong> ${links.length}</div>
+              <div class="stat"><strong>Global Counter:</strong> ${globalCounter}</div>
+              <div class="stat"><strong>Next Index:</strong> ${nextIndex}</div>
+              <div class="stat next"><strong>Next Link:</strong> ${links[nextIndex]}</div>
+              
+              <hr>
+              
+              <h3>🔗 Semua Link:</h3>
+              <ol start="0">
+                ${links.map((l, i) => `
+                  <li style="${i === nextIndex ? 'background: #fff3cd; padding: 5px; font-weight: bold;' : ''}">
+                    ${l} ${i === nextIndex ? '<strong style="color: red;">← NEXT</strong>' : ''}
+                  </li>
+                `).join("")}
+              </ol>
+              
+              <hr>
+              
+              <p>
+                <a href="/reset">🔄 Reset Counter</a> | 
+                <a href="/preview">📋 Preview Links</a> | 
+                <a href="/">🏠 Test Redirect</a>
+              </p>
+            </div>
+          </body>
+          </html>
+        `;
+        return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+      } catch (e) {
+        return new Response("Error: " + e.message, { status: 500 });
+      }
+    }
+
+    // Preview semua link
+    if (pathname === "/preview") {
+      try {
+        const links = await loadLinks();
+        const html = `
+          <!DOCTYPE html>
+          <html lang="id">
+          <head>
+            <meta charset="utf-8">
+            <title>Preview Links</title>
+            <style>
+              body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+              .container { background: white; padding: 20px; border-radius: 8px; max-width: 800px; margin: 0 auto; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h2>📋 Total Link: ${links.length}</h2>
+              <ol>${links.map(l => `<li>${l}</li>`).join("")}</ol>
+              <hr>
+              <p><a href="/status">📊 Lihat Status</a></p>
+            </div>
+          </body>
+          </html>
+        `;
+        return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+      } catch (e) {
+        return new Response("Error: " + e.message, { status: 500 });
+      }
+    }
+
+    // Proof redirect ke fallback
+    if (pathname === "/proof") {
+      return new Response(null, { status: 302, headers: { Location: FALLBACK_LINK } });
+    }
+
+    // =================================================================
+    // 4. FITUR HEMAT KUOTA: BLOCK BOTS & CRAWLERS
+    // =================================================================
     const ua = request.headers.get("User-Agent") || "";
-    // Regex mendeteksi bot umum (WA, FB, Twitter, Telegram, Discord, Google)
     if (/facebookexternalhit|WhatsApp|TelegramBot|Twitterbot|Discordbot|Googlebot|bingbot/i.test(ua)) {
       return new Response(`
         <!doctype html>
@@ -37,98 +176,6 @@ export default {
         </html>`, 
         { headers: { "content-type": "text/html" } }
       );
-    }
-
-    // Health check sederhana
-    if (pathname === "/health") return new Response("ok");
-
-    // =================================================================
-    // 3. FUNGSI LOAD LINK (CACHE 1 JAM / 3600 DETIK)
-    // =================================================================
-    async function loadLinks() {
-      // GANTI URL INI dengan link raw GitHub kamu sendiri
-      const RAW_URL = "https://raw.githubusercontent.com/Hecate1337-py/shopeeaff/main/links.txt";
-      
-      const cache = caches.default;
-      const cacheKey = new Request(RAW_URL);
-
-      // Cek apakah ada data di Cache Cloudflare?
-      let res = await cache.match(cacheKey);
-
-      if (!res) {
-        // Jika tidak ada di cache, ambil dari GitHub
-        // cacheTtl: 3600 = 1 Jam. (Lebih hemat daripada 60 detik)
-        // cacheEverything: true = Paksa simpan cache walau GitHub kirim header no-cache
-        res = await fetch(RAW_URL, { 
-          cf: { cacheTtl: 3600, cacheEverything: true } 
-        });
-
-        if (!res.ok) throw new Error("Gagal mengambil links.txt dari GitHub");
-
-        // Kita buat ulang response agar header cache-nya valid untuk disimpan
-        const resToCache = new Response(res.clone().body, res);
-        resToCache.headers.set("Cache-Control", "public, max-age=3600");
-        
-        // Simpan ke Cache Cloudflare (Background process)
-        ctx.waitUntil(cache.put(cacheKey, resToCache));
-      }
-
-      const text = await res.text();
-      // Bersihkan text dari baris kosong atau karakter aneh
-      const lines = text
-        .split("\n")
-        .map(l => l.trim().replace(/[\u0000-\u001F\u007F]/g, ""))
-        .filter(Boolean); // Hapus baris kosong
-
-      if (!lines.length) throw new Error("File links.txt kosong");
-      return lines;
-    }
-
-    // =================================================================
-    // 4. HALAMAN DEBUG (/preview, /proof, /reset, /status)
-    // =================================================================
-    
-    // Reset counter ke 0
-    if (pathname === "/reset") {
-      globalCounter = 0;
-      return new Response("Counter direset ke 0", { headers: { "content-type": "text/plain" } });
-    }
-
-    // Lihat status counter dan link berikutnya
-    if (pathname === "/status") {
-      try {
-        const links = await loadLinks();
-        const nextIndex = globalCounter % links.length;
-        const html = `
-          <h2>Status Rotator</h2>
-          <p><strong>Total Links:</strong> ${links.length}</p>
-          <p><strong>Global Counter:</strong> ${globalCounter}</p>
-          <p><strong>Next Index:</strong> ${nextIndex}</p>
-          <p><strong>Next Link:</strong> ${links[nextIndex]}</p>
-          <hr>
-          <h3>Semua Link:</h3>
-          <ol start="0">${links.map((l, i) => `<li>${l} ${i === nextIndex ? '<strong>(← NEXT)</strong>' : ''}</li>`).join("")}</ol>
-          <hr>
-          <p><a href="/reset">Reset Counter</a></p>
-        `;
-        return new Response(html, { headers: { "content-type": "text/html" } });
-      } catch (e) {
-        return new Response("Error: " + e.message, { status: 500 });
-      }
-    }
-
-    if (pathname === "/proof") {
-      return new Response(null, { status: 302, headers: { Location: FALLBACK_LINK } });
-    }
-
-    if (pathname === "/preview") {
-      try {
-        const links = await loadLinks();
-        const html = `<h2>Total Link: ${links.length}</h2><ol>${links.map(l => `<li>${l}</li>`).join("")}</ol>`;
-        return new Response(html, { headers: { "content-type": "text/html" } });
-      } catch (e) {
-        return new Response("Error: " + e.message, { status: 500 });
-      }
     }
 
     // =================================================================
@@ -158,7 +205,7 @@ export default {
         status: 302,
         headers: { 
           "Location": target, 
-          "Cache-Control": "no-store" // Browser user jangan nge-cache redirect ini, biar bisa ganti-ganti
+          "Cache-Control": "no-store"
         }
       });
 
@@ -174,23 +221,3 @@ export default {
     }
   }
 }
-```
-
----
-
-## **Fitur Baru untuk Debugging:**
-
-### **1. `/status` - Lihat counter & link berikutnya**
-Buka: `https://domain-kamu.pages.dev/status`
-
-Akan tampil:
-```
-Status Rotator
-Total Links: 2
-Global Counter: 5
-Next Index: 1
-Next Link: https://s.blibli.com/GNtk/k8oxf8iu/
-
-Semua Link:
-0. https://s.shopee.co.id/9fFEdkieWo/
-1. https://s.blibli.com/GNtk/k8oxf8iu/ (← NEXT)
