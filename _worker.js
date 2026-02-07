@@ -7,7 +7,7 @@ Export default {
     // 1. SETUP: LINK CADANGAN (WAJIB DIGANTI)
     // =================================================================
     // Link ini dipakai jika GitHub error atau list kosong.
-    const FALLBACK_LINK = "https://s.shopee.co.id/9pXfMxzjld"; 
+    const FALLBACK_LINK = "https://s.shopee.co.id/4VXA7nLPjk/"; 
 
     // =================================================================
     // 2. FITUR HEMAT KUOTA: BLOCK BOTS & CRAWLERS
