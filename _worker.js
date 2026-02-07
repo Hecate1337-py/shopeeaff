@@ -1,3 +1,6 @@
+// Counter global untuk rotasi berurutan (reset tiap deployment)
+let globalCounter = 0;
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -99,14 +102,16 @@ export default {
     }
 
     // =================================================================
-    // 5. LOGIKA ROTATOR UTAMA
+    // 5. LOGIKA ROTATOR BERURUTAN (ROUND-ROBIN)
     // =================================================================
     try {
       const lines = await loadLinks();
       
-      // MURNI RANDOM: Tidak ada logika persentase/pembagian lain.
-      // 100% link diambil dari list kamu.
-      const selected = lines[Math.floor(Math.random() * lines.length)];
+      // ROTASI BERURUTAN: Setiap request ambil link berikutnya secara adil
+      const index = globalCounter % lines.length;
+      globalCounter++; // Naikkan counter untuk request berikutnya
+      
+      const selected = lines[index];
 
       // Validasi URL biar aman
       let target;
