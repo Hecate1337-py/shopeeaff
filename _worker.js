@@ -85,8 +85,38 @@ export default {
     }
 
     // =================================================================
-    // 4. HALAMAN DEBUG (/preview & /proof)
+    // 4. HALAMAN DEBUG (/preview, /proof, /reset, /status)
     // =================================================================
+    
+    // Reset counter ke 0
+    if (pathname === "/reset") {
+      globalCounter = 0;
+      return new Response("Counter direset ke 0", { headers: { "content-type": "text/plain" } });
+    }
+
+    // Lihat status counter dan link berikutnya
+    if (pathname === "/status") {
+      try {
+        const links = await loadLinks();
+        const nextIndex = globalCounter % links.length;
+        const html = `
+          <h2>Status Rotator</h2>
+          <p><strong>Total Links:</strong> ${links.length}</p>
+          <p><strong>Global Counter:</strong> ${globalCounter}</p>
+          <p><strong>Next Index:</strong> ${nextIndex}</p>
+          <p><strong>Next Link:</strong> ${links[nextIndex]}</p>
+          <hr>
+          <h3>Semua Link:</h3>
+          <ol start="0">${links.map((l, i) => `<li>${l} ${i === nextIndex ? '<strong>(← NEXT)</strong>' : ''}</li>`).join("")}</ol>
+          <hr>
+          <p><a href="/reset">Reset Counter</a></p>
+        `;
+        return new Response(html, { headers: { "content-type": "text/html" } });
+      } catch (e) {
+        return new Response("Error: " + e.message, { status: 500 });
+      }
+    }
+
     if (pathname === "/proof") {
       return new Response(null, { status: 302, headers: { Location: FALLBACK_LINK } });
     }
@@ -144,3 +174,23 @@ export default {
     }
   }
 }
+```
+
+---
+
+## **Fitur Baru untuk Debugging:**
+
+### **1. `/status` - Lihat counter & link berikutnya**
+Buka: `https://domain-kamu.pages.dev/status`
+
+Akan tampil:
+```
+Status Rotator
+Total Links: 2
+Global Counter: 5
+Next Index: 1
+Next Link: https://s.blibli.com/GNtk/k8oxf8iu/
+
+Semua Link:
+0. https://s.shopee.co.id/9fFEdkieWo/
+1. https://s.blibli.com/GNtk/k8oxf8iu/ (← NEXT)
