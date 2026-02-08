@@ -139,7 +139,3 @@ Export default {
     }
   }
 }
-
-
-
-Bagaimana cara kerja script ini?
