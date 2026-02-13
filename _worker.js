@@ -6,7 +6,7 @@ export default {
     // =================================================================
     // 1. SETUP
     // =================================================================
-    const FALLBACK_LINK = "https://s.shopee.co.id/6pvD4CLvmb/";
+    const FALLBACK_LINK = "https://s.shopee.co.id/6pvD4CLvmb";
 
     // =================================================================
     // 2. BLOCK BOTS (Hemat Kuota)
